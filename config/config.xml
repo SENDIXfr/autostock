@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<module>
+    <name>sdx-autostock</name>
+    <displayName>SDX AutoStock</displayName>
+    <version>1.0.0</version>
+    <author>Your Name</author>
+    <description>Module to activate/deactivate products based on stock.</description>
+    <tab>administration</tab>
+    <need_instance>0</need_instance>
+    <bootstrap>true</bootstrap>
+    <ps_versions_compliancy>
+        <min>1.7.0.0</min>
+        <max>8.99.99</max>
+    </ps_versions_compliancy>
+</module>
