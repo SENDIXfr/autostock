@@ -39,7 +39,7 @@ class SdxAutostock extends Module
         return parent::uninstall();
     }
 
-    public function hookActionCronJob()
+    public function hookActionCronJob($params)
     {
         $cronTask = new SDXAutostockCronTask();
         $cronTask->execute();
