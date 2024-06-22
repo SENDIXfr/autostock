@@ -4,8 +4,6 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
-use SDXAutostock\Cron\SDXAutostockCronTask;
-
 class SdxAutostock extends Module
 {
     public function __construct()
@@ -15,23 +13,22 @@ class SdxAutostock extends Module
         $this->version = '1.0.0';
         $this->author = 'Your Name';
         $this->need_instance = 0;
-        $this->bootstrap = true;
-
         $this->ps_versions_compliancy = [
-            'min' => '1.7.0.0',
-            'max' => '8.99.99',
+            'min' => '8.0.0',
+            'max' => _PS_VERSION_
         ];
+        $this->bootstrap = true;
 
         parent::__construct();
 
         $this->displayName = $this->l('SDX AutoStock');
-        $this->description = $this->l('Module to activate/deactivate products based on stock.');
-        $this->confirmUninstall = $this->l('Are you sure you want to uninstall?');
+        $this->description = $this->l('Automatically disables products that are out of stock using a cron job.');
     }
 
     public function install()
     {
-        return parent::install() && $this->registerHook('actionCronJob');
+        return parent::install() &&
+            $this->registerHook('actionCronJob');
     }
 
     public function uninstall()
@@ -39,9 +36,26 @@ class SdxAutostock extends Module
         return parent::uninstall();
     }
 
-    public function hookActionCronJob($params)
+    public function hookActionCronJob()
     {
-        $cronTask = new SDXAutostockCronTask();
-        $cronTask->execute();
+        $this->disableOutOfStockProducts();
+    }
+
+    private function disableOutOfStockProducts()
+    {
+        $sql = 'UPDATE ' . _DB_PREFIX_ . 'product p
+                JOIN ' . _DB_PREFIX_ . 'stock_available sa ON p.id_product = sa.id_product
+                SET p.active = 0
+                WHERE sa.quantity <= 0 AND p.active = 1';
+
+        return Db::getInstance()->execute($sql);
     }
 }
+
+// Content for config/cron_jobs.yml
+/*
+jobs:
+  - name: SDX AutoStock - Disable Out of Stock Products
+    interval: 0 5 * * *
+    command: SdxAutostock
+*/
