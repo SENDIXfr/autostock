@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
+  <file source-language="en-US" target-language="fr-FR" datatype="plaintext" original="sdxautostock.php">
+    <body>
+      <trans-unit id="module_name"><source>SDX AutoStock</source><target>SDX AutoStock</target></trans-unit>
+      <trans-unit id="module_description"><source>Automatically disables out-of-stock products and optionally reactivates them when stock returns.</source><target>Désactive automatiquement les produits en rupture de stock et peut les réactiver lorsque le stock revient.</target></trans-unit>
+      <trans-unit id="uninstall_confirmation"><source>Uninstall SDX AutoStock and remove its tracking data?</source><target>Désinstaller SDX AutoStock et supprimer ses données de suivi ?</target></trans-unit>
+      <trans-unit id="token_regenerated"><source>The cron token has been regenerated.</source><target>Le jeton du cron a été régénéré.</target></trans-unit>
+      <trans-unit id="threshold_invalid"><source>The stock threshold must be an integer between -1,000,000 and 1,000,000.</source><target>Le seuil de stock doit être un entier compris entre -1 000 000 et 1 000 000.</target></trans-unit>
+      <trans-unit id="settings_error"><source>The settings could not be saved.</source><target>Les réglages n’ont pas pu être enregistrés.</target></trans-unit>
+      <trans-unit id="settings_saved"><source>The settings have been saved.</source><target>Les réglages ont été enregistrés.</target></trans-unit>
+      <trans-unit id="sync_completed"><source>Synchronization completed: %disabled% product(s) disabled, %enabled% product(s) enabled.</source><target>Synchronisation terminée : %disabled% produit(s) désactivé(s), %enabled% produit(s) activé(s).</target></trans-unit>
+      <trans-unit id="sync_failed"><source>Synchronization failed. See the PrestaShop logs for details.</source><target>La synchronisation a échoué. Consultez les journaux PrestaShop pour plus de détails.</target></trans-unit>
+      <trans-unit id="form_title"><source>Stock synchronization</source><target>Synchronisation du stock</target></trans-unit>
+      <trans-unit id="threshold_label"><source>Stock threshold</source><target>Seuil de stock</target></trans-unit>
+      <trans-unit id="threshold_help"><source>Products with an aggregate quantity at or below this value are disabled.</source><target>Les produits dont la quantité agrégée est inférieure ou égale à cette valeur sont désactivés.</target></trans-unit>
+      <trans-unit id="reactivation_label"><source>Automatic reactivation</source><target>Réactivation automatique</target></trans-unit>
+      <trans-unit id="enabled"><source>Enabled</source><target>Activée</target></trans-unit>
+      <trans-unit id="disabled"><source>Disabled</source><target>Désactivée</target></trans-unit>
+      <trans-unit id="reactivation_help"><source>Only products previously disabled by this module are reactivated.</source><target>Seuls les produits précédemment désactivés par ce module sont réactivés.</target></trans-unit>
+      <trans-unit id="save"><source>Save</source><target>Enregistrer</target></trans-unit>
+      <trans-unit id="cron_title"><source>Cron execution</source><target>Exécution du cron</target></trans-unit>
+      <trans-unit id="cron_help"><source>Call the URL for each shop from your scheduler. Keep the token secret.</source><target>Appelez l’URL de chaque boutique depuis votre planificateur. Gardez le jeton secret.</target></trans-unit>
+      <trans-unit id="run_now"><source>Run now</source><target>Exécuter maintenant</target></trans-unit>
+      <trans-unit id="regenerate_token"><source>Regenerate token</source><target>Régénérer le jeton</target></trans-unit>
+    </body>
+  </file>
+</xliff>

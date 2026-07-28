@@ -1,4 +1,0 @@
-jobs:
-  - name: SDX AutoStock - Disable Out of Stock Products
-    interval: 0 5 * * *
-    command: SdxAutostock

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<module>
+    <name>sdxautostock</name>
+    <displayName><![CDATA[SDX AutoStock]]></displayName>
+    <version><![CDATA[2.0.0]]></version>
+    <author><![CDATA[SENDIX]]></author>
+    <description><![CDATA[Automatically disables out-of-stock products and optionally reactivates them when stock returns.]]></description>
+    <tab>administration</tab>
+    <is_configurable>1</is_configurable>
+    <need_instance>0</need_instance>
+    <bootstrap>true</bootstrap>
+    <ps_versions_compliancy>
+        <min>8.0.0</min>
+        <max>9.99.99</max>
+    </ps_versions_compliancy>
+</module>
