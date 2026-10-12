@@ -8,12 +8,18 @@ set_error_handler(function ($severity, $message, $file, $line) {
 });
 
 $module = new Autostock();
-check($module->version === '2.1.0' && $module->ps_versions_compliancy['max'] === '9.2.99', 'Compatibility metadata is incorrect.');
-$module->getContent();
+check($module->version === '2.3.0' && $module->ps_versions_compliancy['max'] === '9.2.99', 'Compatibility metadata is incorrect.');
+$content = $module->getContent();
 $links = $module->context->link->moduleLinks;
-check(count($links) === 2, 'Only active shops with the module enabled should have cron links.');
-check($links[0][4] === 11 && $links[0][5] === 1, 'The cron link must use the target shop language and domain.');
-check($links[1][4] === 22 && $links[1][5] === 2, 'The second shop must not use the current shop domain.');
+check(count($links) === 4, 'Only active shops with the module enabled should have cron and webcron links.');
+foreach (['cron', 'webcron'] as $endpoint) {
+    $endpointLinks = array_values(array_filter($links, function ($link) use ($endpoint) { return $link[1] === $endpoint; }));
+    check(count($endpointLinks) === 2, 'Each active shop needs a ' . $endpoint . ' link.');
+    check($endpointLinks[0][4] === 11 && $endpointLinks[0][5] === 1, 'The link must use the target shop language and domain.');
+    check($endpointLinks[1][4] === 22 && $endpointLinks[1][5] === 2, 'The second shop must not use the current shop domain.');
+    check($endpointLinks[0][3] === true && $endpointLinks[0][2]['token'] === 'secret-token', 'Scheduler URLs must use HTTPS and the cron token.');
+}
+check(strpos($content, 'readonly="readonly"') !== false && strpos($content, 'select the GET method') !== false, 'Webcron URLs must be copyable with setup instructions.');
 check(HelperForm::$last->tpl_vars['fields_value']['autostock_token'] === 'admin-token', 'Settings form token is missing.');
 
 $result = $module->runSynchronization(2);
@@ -48,6 +54,9 @@ check(strpos($module->getContent(), 'could not be regenerated') !== false, 'Fail
 Configuration::$failWrite = false;
 check(strpos($module->getContent(), 'OK:') !== false, 'Valid POST should regenerate the token.');
 check(strlen(Configuration::$global[Autostock::CONFIG_TOKEN]) === 64, 'Cron token must contain 256 bits of entropy.');
+foreach (array_slice($module->context->link->moduleLinks, -4) as $link) {
+    check($link[2]['token'] === Configuration::$global[Autostock::CONFIG_TOKEN], 'Token rotation must update both cron and webcron URLs.');
+}
 
 $_REQUEST = ['submitAutostockSettings' => 1, 'autostock_token' => 'admin-token', Autostock::CONFIG_THRESHOLD => ['0']];
 check(strpos($module->getContent(), 'must be an integer') !== false, 'Malformed thresholds must be rejected without warnings.');
@@ -60,5 +69,16 @@ $configurationBeforeUpgrade = Configuration::$global;
 check(upgrade_module_2_1_0($module), 'Version 2.0 upgrade should succeed.');
 check(Configuration::$global === $configurationBeforeUpgrade, 'Upgrade must preserve settings and the cron token.');
 check(strpos(end(Db::getInstance()->queries), 'ENGINE=InnoDB') !== false, 'Upgrade must ensure transactional tracking.');
+
+require dirname(__DIR__) . '/upgrade/upgrade-2.3.0.php';
+check(upgrade_module_2_3_0($module), 'Availability hook upgrade should succeed.');
+check(in_array('actionFrontControllerInitAfter', $module->registeredHooks, true), 'Upgrade must register the availability hook.');
+check(Configuration::$global === $configurationBeforeUpgrade, 'Availability upgrade must preserve settings and token.');
+$module->hookRegistrationSucceeds = false;
+check(!upgrade_module_2_3_0($module), 'Failed hook registration must fail the upgrade.');
+$module->hookRegistrationSucceeds = true;
+$module->registeredHooks = [];
+check($module->install(), 'Fresh installation should succeed.');
+check(in_array('actionFrontControllerInitAfter', $module->registeredHooks, true), 'Fresh installation must register the availability hook.');
 
 echo "Module tests passed.\n";

@@ -22,14 +22,19 @@ class CronModule
     }
 }
 
-require dirname(__DIR__, 2) . '/controllers/front/cron.php';
+$endpoint = isset($argv[1]) ? $argv[1] : 'cron';
+check(in_array($endpoint, ['cron', 'webcron'], true), 'Unexpected test endpoint.');
+require dirname(__DIR__, 2) . '/controllers/front/' . $endpoint . '.php';
 $_REQUEST = json_decode(stream_get_contents(STDIN), true);
+$_SERVER['REQUEST_METHOD'] = isset($argv[2]) ? $argv[2] : 'GET';
 http_response_code(200);
 register_shutdown_function(function () { file_put_contents('php://stderr', (string) http_response_code()); });
 set_error_handler(function ($severity, $message, $file, $line) {
     throw new ErrorException($message, 0, $severity, $file, $line);
 });
-$controller = new AutostockCronModuleFrontController();
+$controller = $endpoint === 'webcron'
+    ? new AutostockWebcronModuleFrontController()
+    : new AutostockCronModuleFrontController();
 $controller->module = new CronModule();
 $controller->context = (object) ['shop' => (object) ['id' => 1]];
 $controller->init();

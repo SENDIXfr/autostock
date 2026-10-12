@@ -18,7 +18,8 @@
         "test": [
             "@php tests/StockSynchronizerTest.php",
             "@php tests/ModuleTest.php",
-            "@php tests/CronControllerTest.php"
+            "@php tests/CronControllerTest.php",
+            "@php tests/ProductAvailabilityTest.php"
         ],
         "test:integration": "@php tests/StockSynchronizerIntegrationTest.php"
     },

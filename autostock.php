@@ -22,11 +22,11 @@ class Autostock extends Module
     {
         $this->name = 'autostock';
         $this->tab = 'administration';
-        $this->version = '2.1.0';
+        $this->version = '2.3.0';
         $this->author = 'SENDIX';
         $this->need_instance = 0;
         $this->is_configurable = 1;
-        $this->controllers = ['cron'];
+        $this->controllers = ['cron', 'webcron'];
         $this->ps_versions_compliancy = [
             'min' => '8.0.0',
             'max' => '9.2.99',
@@ -57,7 +57,8 @@ class Autostock extends Module
         $installed = $this->installDatabase()
             && $this->installConfiguration()
             && $this->registerHook('actionCronJob')
-            && $this->registerHook('actionProductUpdate');
+            && $this->registerHook('actionProductUpdate')
+            && $this->registerHook('actionFrontControllerInitAfter');
 
         if (!$installed) {
             $this->uninstallDatabase();
@@ -179,6 +180,72 @@ class Autostock extends Module
                 '`id_product` = ' . $idProduct . ' AND `id_shop` = ' . (int) $idShop
             );
         }
+    }
+
+    /**
+     * Runs inside ProductController::init(), before the native disabled-product
+     * redirect/404. Maintenance and country restrictions have already run.
+     */
+    public function hookActionFrontControllerInitAfter($params)
+    {
+        $controller = isset($params['controller']) ? $params['controller'] : null;
+        if (!$controller instanceof ProductController
+            || !empty($controller->ajax)
+            || !in_array(isset($_SERVER['REQUEST_METHOD']) ? $_SERVER['REQUEST_METHOD'] : '', ['GET', 'HEAD'], true)
+            || Tools::getValue('preview') == '1') {
+            return;
+        }
+
+        $idProduct = Tools::getValue('id_product');
+        if (!is_scalar($idProduct) || filter_var($idProduct, FILTER_VALIDATE_INT) === false
+            || (int) $idProduct <= 0 || !Validate::isLoadedObject($this->context->shop)) {
+            return;
+        }
+
+        // Use the primary connection without SQL caching: a restocked product
+        // must immediately fall back to the normal product controller.
+        $tracked = Db::getInstance()->getValue(
+            'SELECT tracked.`id_product`
+            FROM `' . _DB_PREFIX_ . 'autostock_disabled` tracked
+            INNER JOIN `' . _DB_PREFIX_ . 'product_shop` shop_product
+                ON shop_product.`id_product` = tracked.`id_product` AND shop_product.`id_shop` = tracked.`id_shop`
+            INNER JOIN `' . _DB_PREFIX_ . 'product` product ON product.`id_product` = tracked.`id_product`
+            WHERE tracked.`id_product` = ' . (int) $idProduct . '
+                AND tracked.`id_shop` = ' . (int) $this->context->shop->id . ' AND shop_product.`active` = 0',
+            false
+        );
+
+        if (!$tracked || !Product::checkAccessStatic(
+            (int) $idProduct,
+            isset($this->context->customer->id) ? (int) $this->context->customer->id : 0
+        )) {
+            return;
+        }
+
+        $this->displayUnavailableProduct();
+    }
+
+    protected function displayUnavailableProduct()
+    {
+        // Standalone response: the theme and product data are not initialized
+        // at this point. Do not add noindex to a temporary error page.
+        $language = $this->context->language->iso_code;
+        $title = $this->trans('This product is temporarily unavailable.', [], 'Modules.Autostock.Shop');
+        $message = $this->trans('It is currently out of stock. Please check again later.', [], 'Modules.Autostock.Shop');
+        $homeLabel = $this->trans('Return to the shop', [], 'Modules.Autostock.Shop');
+        $homeUrl = $this->context->link->getPageLink(
+            'index', null, (int) $this->context->language->id, null, false, (int) $this->context->shop->id
+        );
+
+        http_response_code(503);
+        header('Retry-After: 3600');
+        header('Cache-Control: private, no-store, max-age=0');
+        header('Content-Type: text/html; charset=utf-8');
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'HEAD') {
+            require __DIR__ . '/views/templates/front/unavailable.php';
+        }
+        exit;
     }
 
     /**
@@ -470,16 +537,31 @@ class Autostock extends Module
 
         foreach ($this->getRunnableShopIds() as $idShop) {
             $shop = new Shop($idShop);
+            $idLang = (int) Configuration::get('PS_LANG_DEFAULT', null, (int) $shop->id_shop_group, $idShop);
             $url = $this->context->link->getModuleLink(
                 $this->name,
                 'cron',
                 ['token' => $token, 'id_shop' => $idShop],
                 true,
-                (int) Configuration::get('PS_LANG_DEFAULT', null, (int) $shop->id_shop_group, $idShop),
+                $idLang,
                 $idShop
             );
-            $urls[] = '<li><strong>' . Tools::safeOutput($shop->name) . ':</strong> <code>'
-                . Tools::safeOutput($url) . '</code></li>';
+            $webcronUrl = $this->context->link->getModuleLink(
+                $this->name,
+                'webcron',
+                ['token' => $token, 'id_shop' => $idShop],
+                true,
+                $idLang,
+                $idShop
+            );
+            $urls[] = '<li class="form-group"><strong>' . Tools::safeOutput($shop->name) . '</strong><br>'
+                . '<label for="autostock-webcron-' . $idShop . '">'
+                . Tools::safeOutput($this->trans('Webcron URL', [], self::TRANSLATION_DOMAIN)) . '</label>'
+                . '<input type="text" id="autostock-webcron-' . $idShop . '" class="form-control"'
+                . ' readonly="readonly" spellcheck="false" value="' . Tools::safeOutput($webcronUrl) . '">'
+                . '<p class="help-block">'
+                . Tools::safeOutput($this->trans('Server cron URL', [], self::TRANSLATION_DOMAIN)) . ': <code>'
+                . Tools::safeOutput($url) . '</code></p></li>';
         }
 
         $action = $this->context->link->getAdminLink(
@@ -491,9 +573,14 @@ class Autostock extends Module
 
         return '<div class="panel">'
             . '<h3><i class="icon-time"></i> '
-            . Tools::safeOutput($this->trans('Cron execution', [], self::TRANSLATION_DOMAIN)) . '</h3>'
+            . Tools::safeOutput($this->trans('Cron and webcron', [], self::TRANSLATION_DOMAIN)) . '</h3>'
             . '<p>' . Tools::safeOutput($this->trans(
-                'Call the URL for each shop from your scheduler. Keep the token secret.',
+                'Copy each shop URL into your webcron service and select the GET method. Set the schedule in that service, for example daily at 05:00.',
+                [],
+                self::TRANSLATION_DOMAIN
+            )) . '</p>'
+            . '<p>' . Tools::safeOutput($this->trans(
+                'Keep these URLs secret. Regenerating the token invalidates both cron and webcron URLs.',
                 [],
                 self::TRANSLATION_DOMAIN
             )) . '</p>'

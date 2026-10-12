@@ -21,11 +21,13 @@ class Module
     public $identifier = 'id_module';
     public $context;
     public static $canConfigure = true;
+    public $registeredHooks = [];
+    public $hookRegistrationSucceeds = true;
 
     public function __construct()
     {
         $this->context = (object) [
-            'shop' => new Shop(1), 'language' => (object) ['id' => 1],
+            'shop' => new Shop(1), 'language' => (object) ['id' => 1, 'iso_code' => 'en'],
             'employee' => new Employee(), 'link' => new Link(),
         ];
     }
@@ -34,6 +36,8 @@ class Module
     public function displayError($message) { return 'ERROR: ' . $message; }
     public function displayConfirmation($message) { return 'OK: ' . $message; }
     public function getPermission($action) { return self::$canConfigure; }
+    public function install() { return true; }
+    public function registerHook($hook) { $this->registeredHooks[] = $hook; return $this->hookRegistrationSucceeds; }
 }
 
 class Employee
@@ -62,11 +66,15 @@ class Link
     public function getModuleLink($module, $controller, $params, $ssl = null, $idLang = null, $idShop = null)
     {
         $this->moduleLinks[] = func_get_args();
-        return 'https://shop' . $idShop . '.test/cron?' . http_build_query($params);
+        return 'https://shop' . $idShop . '.test/' . $controller . '?' . http_build_query($params);
     }
     public function getAdminLink($controller, $withToken = true, $routeParams = [], $params = [])
     {
         return '/admin/modules?' . http_build_query($params + ($withToken ? ['token' => 'admin-token'] : []));
+    }
+    public function getPageLink($controller, $ssl = null, $idLang = null, $request = null, $encode = false, $idShop = null)
+    {
+        return 'https://shop' . $idShop . '.test/?lang=' . $idLang . '&home=1';
     }
 }
 
@@ -153,6 +161,7 @@ class Product
 {
     public static $resets = 0;
     public static function resetStaticCache() { ++self::$resets; }
+    public static function checkAccessStatic($idProduct, $idCustomer) { return $idProduct !== 12; }
 }
 
 class PrestaShopLogger

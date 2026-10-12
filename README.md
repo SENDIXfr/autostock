@@ -10,6 +10,10 @@ Module PrestaShop qui désactive les produits dont le stock agrégé atteint un 
 
 La version 2.1.0 corrige les appels incompatibles avec les API de PrestaShop 9.2.0. Les tests locaux ont été exécutés avec PHP 8.4.22 ; une recette sur une boutique PrestaShop 9.2 reste nécessaire. Les versions futures de PrestaShop ne sont pas déclarées compatibles par anticipation. Voir [le rapport d’audit](AUDIT.md) pour les limites et les vérifications restantes.
 
+La version 2.2.0 ajoute une route webcron dédiée et les URL à copier dans la configuration du module.
+
+La version 2.3.0 remplace le 404 des produits encore désactivés par autostock par une réponse HTTP `503 Service Unavailable` avec `Retry-After: 3600`.
+
 ## Installation
 
 Le nom technique PrestaShop est `autostock`. Le dossier installé doit donc obligatoirement s'appeler `autostock` et contenir directement `autostock.php`.
@@ -34,7 +38,7 @@ Si une ancienne copie est déjà installée, sauvegarder ses réglages et sa tab
 
 ### Mise à niveau d’une installation déjà nommée `autostock`
 
-Pour une installation portant déjà ce nom technique en version 2.0.0, remplacer les fichiers par la version 2.1.0 puis lancer la mise à niveau depuis le gestionnaire de modules, sans désinstaller le module. Le script conserve les réglages, le jeton cron et les produits suivis. Il convertit uniquement la table de suivi en InnoDB pour garantir les transactions. Cette opération peut verrouiller la table pendant la conversion.
+Pour une installation portant déjà ce nom technique en version 2.0.0, 2.1.0 ou 2.2.0, remplacer les fichiers par la version 2.3.0 puis lancer la mise à niveau depuis le gestionnaire de modules, sans désinstaller le module. Les réglages, le jeton cron et les produits suivis sont conservés. Depuis la version 2.0.0, le script de mise à niveau 2.1.0 convertit uniquement la table de suivi en InnoDB pour garantir les transactions ; cette opération peut verrouiller la table pendant la conversion. Le script 2.3.0 enregistre le hook de gestion des produits indisponibles : remplacer uniquement les fichiers sans lancer la mise à niveau ne suffit pas pour activer cette fonctionnalité sur une installation existante.
 
 ## Fonctionnement
 
@@ -48,9 +52,35 @@ Pour une installation portant déjà ce nom technique en version 2.0.0, remplace
 - Seules les boutiques actives où le module est activé sont synchronisées. Leurs réglages héritent de leur propre groupe multiboutique.
 - Une ligne de stock agrégé absente est considérée comme une quantité `0`.
 
+## Produits désactivés et référencement
+
+Les visites ordinaires `GET` et `HEAD` d’une fiche encore inactive et suivie par autostock dans la boutique courante répondent en HTTP `503 Service Unavailable`, avec un en-tête `Retry-After: 3600` (nouvel essai conseillé dans une heure, sans promesse de réapprovisionnement). Une page légère, traduite en français, indique l’indisponibilité et propose un retour à la boutique. L’URL reste celle du produit, sans redirection ni directive `noindex`. La réponse n’est pas mise en cache (`Cache-Control: private, no-store, max-age=0`).
+
+Les produits réactivés reprennent le comportement normal de PrestaShop dès la requête suivante. Les produits désactivés manuellement, supprimés, suivis dans une autre boutique, les prévisualisations et les produits interdits au groupe du client restent gérés par PrestaShop. Le module ne modifie aucun fichier du cœur ; il intervient via `actionFrontControllerInitAfter`, avant le traitement natif des produits désactivés, après les restrictions de maintenance et de pays. Les requêtes AJAX et les méthodes autres que `GET` / `HEAD` restent également gérées par PrestaShop.
+
+**Le 503 convient uniquement à une indisponibilité courte.** Il ne garantit pas la conservation de l’indexation : des erreurs 503 prolongées ralentissent l’exploration et peuvent entraîner la suppression des URL de l’index. Pour des ruptures longues ou fréquentes, privilégier une fiche accessible en HTTP `200`, décrivant le produit sans autoriser l’achat, ce qui nécessite de changer la politique de désactivation. Voir les recommandations Google sur les [codes HTTP](https://developers.google.com/crawling/docs/troubleshooting/http-status-codes) et la [restriction temporaire des fonctionnalités](https://developers.google.com/search/docs/crawling-indexing/pause-online-business).
+
+Après mise à niveau, purger les éventuels caches de pages ou CDN qui ont déjà mémorisé les anciennes réponses 404, puis vérifier une fiche concernée avec `curl -I "URL_DU_PRODUIT"` : statut `503`, `Retry-After: 3600`, aucune redirection. Vérifier aussi son retour à `200` après réactivation et le maintien des vraies erreurs 404 sur la boutique de test.
+
 ## Planification
 
-La page de configuration affiche une URL de cron sécurisée pour chaque boutique du contexte courant. Conservez son jeton secret et appelez l'URL avec `curl` ou `wget`, par exemple :
+### Webcron depuis un service externe
+
+Un webcron permet de planifier la synchronisation en appelant une URL HTTP depuis un service externe, sans accès aux tâches cron du serveur.
+
+1. Ouvrir la configuration d’`autostock`, panneau **Cron et webcron**.
+2. Copier le champ **URL webcron** de la boutique concernée dans le service de planification.
+3. Choisir la méthode **GET**, sans corps de requête ni connexion au back-office. Le jeton secret est déjà inclus dans l’URL HTTPS.
+4. Choisir la fréquence et le fuseau horaire dans le service, par exemple tous les jours à 05 h 00 en Europe/Paris. Le module ne programme pas lui-même les appels.
+5. Lancer un test depuis le service et vérifier une réponse HTTP `200` avec `success: true` et les compteurs `disabled` / `enabled`.
+
+Une tâche doit être créée pour chaque boutique à synchroniser. La route dédiée est `webcron`, par exemple `https://votre-boutique.example/index.php?fc=module&module=autostock&controller=webcron&id_shop=1&token=VOTRE_JETON`. Utiliser l’URL générée par le module pour respecter le domaine, le sous-dossier et la langue de la boutique.
+
+Le webcron partage l’authentification, les réglages par boutique, la protection contre les exécutions simultanées et les réponses du cron serveur. Il fonctionne aussi en mode maintenance. La rotation du jeton invalide les anciennes URL cron et webcron : les mettre à jour dans le planificateur. Les appels `POST` sont également acceptés ; `HEAD`, `OPTIONS` et les autres méthodes ne lancent aucune synchronisation et renvoient `405`.
+
+### Cron du serveur
+
+Le même panneau affiche l’**URL cron serveur** pour chaque boutique du contexte courant. Conservez son jeton secret et appelez l’URL avec `curl` ou `wget`, par exemple :
 
 ```cron
 0 5 * * * curl -fsS "URL_AFFICHEE_DANS_LE_MODULE" > /dev/null
@@ -58,7 +88,7 @@ La page de configuration affiche une URL de cron sécurisée pour chaque boutiqu
 
 Le hook `actionCronJob` et `getCronFrequency()` restent disponibles pour le module historique « Cron tasks manager ». Le fichier YAML présent dans la version 1.0 a été supprimé, car PrestaShop ne le charge pas comme une définition de tâche cron.
 
-Le cron répond en JSON, y compris en mode maintenance, et renvoie les statuts HTTP suivants : `200` en cas de succès, `400` pour une boutique invalide ou désactivée, `403` pour un jeton invalide, `409` si une synchronisation est déjà en cours, `500` en cas d’échec interne. Le statut `409` est accompagné de `Retry-After: 60` ; le planificateur peut réessayer ultérieurement. Le jeton est global à l’installation : il permet de lancer le cron sur toute boutique où le module est activé.
+Le cron et le webcron répondent en JSON, y compris en mode maintenance, et renvoient les statuts HTTP suivants : `200` en cas de succès, `400` pour une boutique invalide ou désactivée, `403` pour un jeton invalide, `405` pour une méthode non acceptée, `409` si une synchronisation est déjà en cours, `500` en cas d’échec interne. Le statut `409` est accompagné de `Retry-After: 60` ; le planificateur peut réessayer ultérieurement. Le jeton est global à l’installation : il permet de lancer le cron ou le webcron sur toute boutique où le module est activé.
 
 ## Réglages
 
@@ -74,12 +104,13 @@ composer validate --strict
 composer test
 ```
 
-Les tests sans installation PrestaShop couvrent les requêtes, le verrouillage, les erreurs et rollbacks, l’héritage multiboutique, les formulaires protégés, la migration et onze requêtes du contrôleur cron. Ils peuvent aussi être lancés directement :
+Les tests sans installation PrestaShop couvrent les requêtes, le verrouillage, les erreurs et rollbacks, l’héritage multiboutique, les formulaires protégés, la migration et 32 requêtes des contrôleurs cron et webcron. Une quatrième suite lance un serveur PHP local et vérifie 18 requêtes HTTP du traitement des produits indisponibles : 503, en-têtes, HEAD sans corps, échappement HTML et retour au contrôleur natif pour les cas exclus. Elle nécessite l’accès réseau à `127.0.0.1`. Ces tests utilisent des doublures du cœur et de la base ; ils ne remplacent pas une recette sur une boutique réelle. Ils peuvent aussi être lancés directement :
 
 ```bash
 php tests/StockSynchronizerTest.php
 php tests/ModuleTest.php
 php tests/CronControllerTest.php
+php tests/ProductAvailabilityTest.php
 ```
 
 Un test d’intégration SQL est fourni pour une base de test dédiée, avec `pdo_mysql` et les variables d’environnement `AUTOSTOCK_TEST_DSN`, `AUTOSTOCK_TEST_USER`, `AUTOSTOCK_TEST_PASSWORD` :

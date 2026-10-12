@@ -22,6 +22,11 @@
       <trans-unit id="reactivation_help"><source>Only products previously disabled by this module are reactivated.</source><target>Seuls les produits précédemment désactivés par ce module sont réactivés.</target></trans-unit>
       <trans-unit id="save"><source>Save</source><target>Enregistrer</target></trans-unit>
       <trans-unit id="cron_title"><source>Cron execution</source><target>Exécution du cron</target></trans-unit>
+      <trans-unit id="cron_webcron_title"><source>Cron and webcron</source><target>Cron et webcron</target></trans-unit>
+      <trans-unit id="webcron_url"><source>Webcron URL</source><target>URL webcron</target></trans-unit>
+      <trans-unit id="server_cron_url"><source>Server cron URL</source><target>URL cron serveur</target></trans-unit>
+      <trans-unit id="webcron_help"><source>Copy each shop URL into your webcron service and select the GET method. Set the schedule in that service, for example daily at 05:00.</source><target>Copiez l’URL de chaque boutique dans votre service de webcron et choisissez la méthode GET. Réglez la fréquence dans ce service, par exemple tous les jours à 05 h 00.</target></trans-unit>
+      <trans-unit id="webcron_token_help"><source>Keep these URLs secret. Regenerating the token invalidates both cron and webcron URLs.</source><target>Gardez ces URL secrètes. Régénérer le jeton invalide les URL cron et webcron.</target></trans-unit>
       <trans-unit id="cron_help"><source>Call the URL for each shop from your scheduler. Keep the token secret.</source><target>Appelez l’URL de chaque boutique depuis votre planificateur. Gardez le jeton secret.</target></trans-unit>
       <trans-unit id="run_now"><source>Run now</source><target>Exécuter maintenant</target></trans-unit>
       <trans-unit id="regenerate_token"><source>Regenerate token</source><target>Régénérer le jeton</target></trans-unit>

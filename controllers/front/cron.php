@@ -13,6 +13,13 @@ class AutostockCronModuleFrontController extends ModuleFrontController
     // running storefront hooks, geolocation, or theme rendering.
     public function init()
     {
+        $method = isset($_SERVER['REQUEST_METHOD']) ? $_SERVER['REQUEST_METHOD'] : 'GET';
+
+        if (!in_array($method, ['GET', 'POST'], true)) {
+            header('Allow: GET, POST');
+            $this->renderJson(['success' => false, 'error' => 'Method not allowed'], 405);
+        }
+
         $providedToken = Tools::getValue('token');
         $expectedToken = (string) Configuration::getGlobalValue(Autostock::CONFIG_TOKEN);
 

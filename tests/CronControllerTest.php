@@ -17,11 +17,18 @@ $cases = [
     [['token' => 'secret-token', 'id_shop' => 3], 400],
     [['token' => 'secret-token', 'id_shop' => 4], 409],
     [['token' => 'secret-token', 'id_shop' => 5], 500],
+    [['token' => 'secret-token', 'id_shop' => '2'], 200, 'POST'],
+    [['token' => 'secret-token'], 405, 'HEAD'],
+    [['token' => 'secret-token'], 405, 'OPTIONS'],
+    [['token' => 'secret-token'], 405, 'PUT'],
+    [['token' => 'secret-token'], 405, 'DELETE'],
 ];
 
-foreach ($cases as $case) {
+function testCronRequest($endpoint, array $case)
+{
     // Send structured arguments over stdin to avoid OS-specific shell quoting.
-    $command = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(__DIR__ . '/fixtures/cron-request.php');
+    $command = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(__DIR__ . '/fixtures/cron-request.php')
+        . ' ' . escapeshellarg($endpoint) . ' ' . escapeshellarg(isset($case[2]) ? $case[2] : 'GET');
     $process = proc_open($command, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
     checkCron(is_resource($process), 'Unable to start PHP subprocess.');
     fwrite($pipes[0], json_encode($case[0]));
@@ -32,7 +39,7 @@ foreach ($cases as $case) {
     fclose($pipes[2]);
     $exitCode = proc_close($process);
     $response = json_decode($body, true);
-    checkCron($exitCode === 0 && $status === (string) $case[1], 'Unexpected cron status: ' . $status . ' / ' . $body);
+    checkCron($exitCode === 0 && $status === (string) $case[1], 'Unexpected ' . $endpoint . ' status: ' . $status . ' / ' . $body);
     checkCron(is_array($response) && $response['success'] === ($case[1] === 200), 'Cron must always return valid JSON.');
     checkCron(strpos($body, 'private details') === false, 'Internal exception details must not leak in cron responses.');
     if ($case[1] === 200) {
@@ -41,4 +48,10 @@ foreach ($cases as $case) {
     }
 }
 
-echo "Cron controller tests passed (" . count($cases) . " requests).\n";
+foreach (['cron', 'webcron'] as $endpoint) {
+    foreach ($cases as $case) {
+        testCronRequest($endpoint, $case);
+    }
+}
+
+echo "Cron and webcron controller tests passed (" . (2 * count($cases)) . " requests).\n";

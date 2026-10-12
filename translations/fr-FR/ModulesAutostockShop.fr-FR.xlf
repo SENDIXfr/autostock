@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
+  <file source-language="en-US" target-language="fr-FR" datatype="plaintext" original="autostock.php">
+    <body>
+      <trans-unit id="unavailable_title"><source>This product is temporarily unavailable.</source><target>Ce produit est temporairement indisponible.</target></trans-unit>
+      <trans-unit id="unavailable_message"><source>It is currently out of stock. Please check again later.</source><target>Il est actuellement en rupture de stock. Merci de revenir plus tard.</target></trans-unit>
+      <trans-unit id="unavailable_home"><source>Return to the shop</source><target>Retour à la boutique</target></trans-unit>
+    </body>
+  </file>
+</xliff>

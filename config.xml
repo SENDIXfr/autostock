@@ -2,7 +2,7 @@
 <module>
     <name>autostock</name>
     <displayName><![CDATA[autostock]]></displayName>
-    <version><![CDATA[2.1.0]]></version>
+    <version><![CDATA[2.3.0]]></version>
     <author><![CDATA[SENDIX]]></author>
     <description><![CDATA[Automatically disables out-of-stock products and optionally reactivates them when stock returns.]]></description>
     <tab>administration</tab>
