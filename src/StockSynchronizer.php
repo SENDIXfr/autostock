@@ -1,6 +1,8 @@
 <?php
 
-namespace SDXAutostock;
+namespace Autostock;
+
+require_once __DIR__ . '/SynchronizationBusyException.php';
 
 /**
  * Synchronizes product availability with the aggregate product stock.
@@ -42,36 +44,63 @@ final class StockSynchronizer
             throw new \InvalidArgumentException('A valid shop identifier is required.');
         }
 
-        $this->executeOrFail('START TRANSACTION');
+        // Named locks are connection-scoped and protect the complete transaction.
+        // Include the database name to keep separate installations independent.
+        $lock = "CONCAT('autostock:', SHA1(CONCAT(DATABASE(), ':', '"
+            . sha1($this->tablePrefix . ':' . $idShop) . "')))";
+        $acquired = $this->database->getValue('SELECT GET_LOCK(' . $lock . ', 0)', false);
+
+        if ((string) $acquired === '0') {
+            throw new SynchronizationBusyException('Stock synchronization is already running for this shop.');
+        }
+
+        if ((string) $acquired !== '1') {
+            throw new \RuntimeException('Unable to acquire the stock synchronization lock.');
+        }
 
         try {
-            $this->removeObsoleteTrackingRows($idShop);
-            $this->trackProductsToDisable($idShop);
-            $disabled = $this->disableTrackedProducts($idShop);
-            $enabled = 0;
+            $this->executeOrFail('START TRANSACTION');
 
-            if ($autoReactivate) {
-                $enabled = $this->reactivateInStockProducts($idShop);
+            try {
+                $this->removeObsoleteTrackingRows($idShop);
+                $this->trackProductsToDisable($idShop);
+                $disabled = $this->disableTrackedProducts($idShop);
+                $enabled = 0;
+
+                if ($autoReactivate) {
+                    $enabled = $this->reactivateInStockProducts($idShop);
+                }
+
+                $this->updateDefaultShopProducts($idShop);
                 $this->removeReactivatedTrackingRows($idShop);
+                $this->executeOrFail('COMMIT');
+
+                return [
+                    'disabled' => $disabled,
+                    'enabled' => $enabled,
+                ];
+            } catch (\Throwable $exception) {
+                try {
+                    $this->database->execute('ROLLBACK');
+                } catch (\Throwable $rollbackException) {
+                    // Preserve the original failure if the connection was lost.
+                }
+
+                throw $exception;
             }
-
-            $this->executeOrFail('COMMIT');
-
-            return [
-                'disabled' => $disabled,
-                'enabled' => $enabled,
-            ];
-        } catch (\Throwable $exception) {
-            $this->database->execute('ROLLBACK');
-
-            throw $exception;
+        } finally {
+            try {
+                $this->database->getValue('SELECT RELEASE_LOCK(' . $lock . ')', false);
+            } catch (\Throwable $releaseException) {
+                // Connection loss releases named locks; do not hide the result.
+            }
         }
     }
 
     private function removeObsoleteTrackingRows($idShop)
     {
         $sql = 'DELETE tracked
-            FROM `' . $this->tablePrefix . 'sdxautostock_disabled` tracked
+            FROM `' . $this->tablePrefix . 'autostock_disabled` tracked
             LEFT JOIN `' . $this->tablePrefix . 'product_shop` product_shop
                 ON product_shop.`id_product` = tracked.`id_product`
                 AND product_shop.`id_shop` = tracked.`id_shop`
@@ -83,7 +112,7 @@ final class StockSynchronizer
 
     private function trackProductsToDisable($idShop)
     {
-        $sql = 'INSERT IGNORE INTO `' . $this->tablePrefix . 'sdxautostock_disabled`
+        $sql = 'INSERT IGNORE INTO `' . $this->tablePrefix . 'autostock_disabled`
                 (`id_product`, `id_shop`, `date_add`)
             SELECT product_shop.`id_product`, ' . (int) $idShop . ', NOW()
             FROM `' . $this->tablePrefix . 'product_shop` product_shop
@@ -101,7 +130,7 @@ final class StockSynchronizer
     private function disableTrackedProducts($idShop)
     {
         $sql = 'UPDATE `' . $this->tablePrefix . 'product_shop` product_shop
-            INNER JOIN `' . $this->tablePrefix . 'sdxautostock_disabled` tracked
+            INNER JOIN `' . $this->tablePrefix . 'autostock_disabled` tracked
                 ON tracked.`id_product` = product_shop.`id_product`
                 AND tracked.`id_shop` = product_shop.`id_shop`
             LEFT JOIN `' . $this->tablePrefix . 'stock_available` stock
@@ -122,7 +151,7 @@ final class StockSynchronizer
     private function reactivateInStockProducts($idShop)
     {
         $sql = 'UPDATE `' . $this->tablePrefix . 'product_shop` product_shop
-            INNER JOIN `' . $this->tablePrefix . 'sdxautostock_disabled` tracked
+            INNER JOIN `' . $this->tablePrefix . 'autostock_disabled` tracked
                 ON tracked.`id_product` = product_shop.`id_product`
                 AND tracked.`id_shop` = product_shop.`id_shop`
             LEFT JOIN `' . $this->tablePrefix . 'stock_available` stock
@@ -143,7 +172,7 @@ final class StockSynchronizer
     private function removeReactivatedTrackingRows($idShop)
     {
         $sql = 'DELETE tracked
-            FROM `' . $this->tablePrefix . 'sdxautostock_disabled` tracked
+            FROM `' . $this->tablePrefix . 'autostock_disabled` tracked
             INNER JOIN `' . $this->tablePrefix . 'product_shop` product_shop
                 ON product_shop.`id_product` = tracked.`id_product`
                 AND product_shop.`id_shop` = tracked.`id_shop`
@@ -151,6 +180,20 @@ final class StockSynchronizer
                 AND product_shop.`active` = 1';
 
         $this->executeOrFail($sql);
+    }
+
+    private function updateDefaultShopProducts($idShop)
+    {
+        $this->executeOrFail('UPDATE `' . $this->tablePrefix . 'product` product
+            INNER JOIN `' . $this->tablePrefix . 'product_shop` product_shop
+                ON product_shop.`id_product` = product.`id_product`
+                AND product_shop.`id_shop` = product.`id_shop_default`
+            INNER JOIN `' . $this->tablePrefix . 'autostock_disabled` tracked
+                ON tracked.`id_product` = product_shop.`id_product`
+                AND tracked.`id_shop` = product_shop.`id_shop`
+            SET product.`active` = product_shop.`active`, product.`date_upd` = NOW()
+            WHERE product_shop.`id_shop` = ' . (int) $idShop . '
+                AND product.`active` <> product_shop.`active`');
     }
 
     private function getStockShopRestriction($idShop)

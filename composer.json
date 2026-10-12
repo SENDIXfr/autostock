@@ -1,5 +1,5 @@
 {
-    "name": "prestashop/sdx-autostock",
+    "name": "prestashop/autostock",
     "description": "Automatically synchronizes PrestaShop product activation with available stock.",
     "type": "prestashop-module",
     "license": "AFL-3.0",
@@ -8,14 +8,19 @@
     },
     "autoload": {
         "psr-4": {
-            "SDXAutostock\\": "src/"
+            "Autostock\\": "src/"
         },
         "classmap": [
-            "sdxautostock.php"
+            "autostock.php"
         ]
     },
     "scripts": {
-        "test": "php tests/StockSynchronizerTest.php"
+        "test": [
+            "@php tests/StockSynchronizerTest.php",
+            "@php tests/ModuleTest.php",
+            "@php tests/CronControllerTest.php"
+        ],
+        "test:integration": "@php tests/StockSynchronizerIntegrationTest.php"
     },
     "config": {
         "preferred-install": "dist",

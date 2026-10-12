@@ -1,6 +1,6 @@
 <?php
 
-use SDXAutostock\StockSynchronizer;
+use Autostock\StockSynchronizer;
 
 if (!defined('_PS_VERSION_')) {
     exit;
@@ -8,41 +8,41 @@ if (!defined('_PS_VERSION_')) {
 
 require_once __DIR__ . '/src/StockSynchronizer.php';
 
-class SdxAutostock extends Module
+class Autostock extends Module
 {
-    const CONFIG_AUTO_REACTIVATE = 'SDXAUTOSTOCK_AUTO_REACTIVATE';
-    const CONFIG_THRESHOLD = 'SDXAUTOSTOCK_THRESHOLD';
-    const CONFIG_TOKEN = 'SDXAUTOSTOCK_CRON_TOKEN';
-    const TRANSLATION_DOMAIN = 'Modules.Sdxautostock.Admin';
+    const CONFIG_AUTO_REACTIVATE = 'AUTOSTOCK_AUTO_REACTIVATE';
+    const CONFIG_THRESHOLD = 'AUTOSTOCK_THRESHOLD';
+    const CONFIG_TOKEN = 'AUTOSTOCK_CRON_TOKEN';
+    const TRANSLATION_DOMAIN = 'Modules.Autostock.Admin';
 
     /** @var bool */
     private static $synchronizationRunning = false;
 
     public function __construct()
     {
-        $this->name = 'sdxautostock';
+        $this->name = 'autostock';
         $this->tab = 'administration';
-        $this->version = '2.0.0';
+        $this->version = '2.1.0';
         $this->author = 'SENDIX';
         $this->need_instance = 0;
         $this->is_configurable = 1;
         $this->controllers = ['cron'];
         $this->ps_versions_compliancy = [
             'min' => '8.0.0',
-            'max' => '9.99.99',
+            'max' => '9.2.99',
         ];
         $this->bootstrap = true;
 
         parent::__construct();
 
-        $this->displayName = $this->trans('SDX AutoStock', [], self::TRANSLATION_DOMAIN);
+        $this->displayName = $this->trans('autostock', [], self::TRANSLATION_DOMAIN);
         $this->description = $this->trans(
             'Automatically disables out-of-stock products and optionally reactivates them when stock returns.',
             [],
             self::TRANSLATION_DOMAIN
         );
         $this->confirmUninstall = $this->trans(
-            'Uninstall SDX AutoStock and remove its tracking data?',
+            'Uninstall autostock and remove its tracking data?',
             [],
             self::TRANSLATION_DOMAIN
         );
@@ -85,19 +85,34 @@ class SdxAutostock extends Module
     {
         $output = '';
 
-        if (Tools::isSubmit('submitSdxAutostockSettings')) {
+        $isAction = Tools::isSubmit('submitAutostockSettings')
+            || Tools::isSubmit('submitAutostockRun')
+            || Tools::isSubmit('submitAutostockToken');
+
+        if ($isAction && !$this->isValidConfigurationRequest()) {
+            return $this->displayError(
+                $this->trans('Invalid request or insufficient permissions.', [], self::TRANSLATION_DOMAIN)
+            ) . $this->renderConfigurationForm() . $this->renderCronPanel();
+        }
+
+        if (Tools::isSubmit('submitAutostockSettings')) {
             $output .= $this->processSettings();
         }
 
-        if (Tools::isSubmit('submitSdxAutostockRun')) {
+        if (Tools::isSubmit('submitAutostockRun')) {
             $output .= $this->processManualRun();
         }
 
-        if (Tools::isSubmit('submitSdxAutostockToken')) {
-            Configuration::updateGlobalValue(self::CONFIG_TOKEN, $this->generateToken());
-            $output .= $this->displayConfirmation(
-                $this->trans('The cron token has been regenerated.', [], self::TRANSLATION_DOMAIN)
-            );
+        if (Tools::isSubmit('submitAutostockToken')) {
+            if (Configuration::updateGlobalValue(self::CONFIG_TOKEN, $this->generateToken())) {
+                $output .= $this->displayConfirmation(
+                    $this->trans('The cron token has been regenerated.', [], self::TRANSLATION_DOMAIN)
+                );
+            } else {
+                $output .= $this->displayError(
+                    $this->trans('The cron token could not be regenerated.', [], self::TRANSLATION_DOMAIN)
+                );
+            }
         }
 
         return $output . $this->renderConfigurationForm() . $this->renderCronPanel();
@@ -118,7 +133,7 @@ class SdxAutostock extends Module
             return true;
         } catch (Throwable $exception) {
             PrestaShopLogger::addLog(
-                '[SDX AutoStock] ' . $exception->getMessage(),
+                '[autostock] ' . $exception->getMessage(),
                 3,
                 null,
                 'Module',
@@ -160,7 +175,7 @@ class SdxAutostock extends Module
 
         foreach ($this->getContextShopIds() as $idShop) {
             Db::getInstance()->delete(
-                'sdxautostock_disabled',
+                'autostock_disabled',
                 '`id_product` = ' . $idProduct . ' AND `id_shop` = ' . (int) $idShop
             );
         }
@@ -176,15 +191,24 @@ class SdxAutostock extends Module
         $idShop = (int) $idShop;
         $shop = new Shop($idShop);
 
-        if (!Validate::isLoadedObject($shop) || !$shop->active) {
+        if (!Validate::isLoadedObject($shop) || !$shop->active || $shop->deleted) {
             throw new InvalidArgumentException('The requested shop does not exist or is disabled.');
         }
 
-        $threshold = (int) Configuration::get(self::CONFIG_THRESHOLD, null, null, $idShop, 0);
+        if (!Db::getInstance()->getValue(
+            'SELECT `id_module` FROM `' . _DB_PREFIX_ . 'module_shop`
+            WHERE `id_module` = ' . (int) $this->id . ' AND `id_shop` = ' . $idShop,
+            false
+        )) {
+            throw new InvalidArgumentException('The module is not enabled for the requested shop.');
+        }
+
+        $idShopGroup = (int) $shop->id_shop_group;
+        $threshold = (int) Configuration::get(self::CONFIG_THRESHOLD, null, $idShopGroup, $idShop, 0);
         $autoReactivate = (bool) Configuration::get(
             self::CONFIG_AUTO_REACTIVATE,
             null,
-            null,
+            $idShopGroup,
             $idShop,
             true
         );
@@ -193,7 +217,14 @@ class SdxAutostock extends Module
         self::$synchronizationRunning = true;
 
         try {
-            return $synchronizer->synchronize($idShop, $autoReactivate);
+            $result = $synchronizer->synchronize($idShop, $autoReactivate);
+
+            if ($result['disabled'] || $result['enabled']) {
+                Cache::clean('objectmodel_Product_*');
+                Product::resetStaticCache();
+            }
+
+            return $result;
         } finally {
             self::$synchronizationRunning = false;
         }
@@ -201,13 +232,13 @@ class SdxAutostock extends Module
 
     private function installDatabase()
     {
-        $sql = 'CREATE TABLE IF NOT EXISTS `' . _DB_PREFIX_ . 'sdxautostock_disabled` (
+        $sql = 'CREATE TABLE IF NOT EXISTS `' . _DB_PREFIX_ . 'autostock_disabled` (
             `id_product` INT UNSIGNED NOT NULL,
             `id_shop` INT UNSIGNED NOT NULL,
             `date_add` DATETIME NOT NULL,
             PRIMARY KEY (`id_product`, `id_shop`),
-            KEY `idx_sdxautostock_shop` (`id_shop`)
-        ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8mb4';
+            KEY `idx_autostock_shop` (`id_shop`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4';
 
         return Db::getInstance()->execute($sql);
     }
@@ -215,28 +246,40 @@ class SdxAutostock extends Module
     private function uninstallDatabase()
     {
         return Db::getInstance()->execute(
-            'DROP TABLE IF EXISTS `' . _DB_PREFIX_ . 'sdxautostock_disabled`'
+            'DROP TABLE IF EXISTS `' . _DB_PREFIX_ . 'autostock_disabled`'
         );
     }
 
     private function installConfiguration()
     {
-        $token = (string) Configuration::get(self::CONFIG_TOKEN);
+        $token = (string) Configuration::getGlobalValue(self::CONFIG_TOKEN);
 
         if ($token === '') {
             $token = $this->generateToken();
         }
 
-        return Configuration::updateValue(self::CONFIG_AUTO_REACTIVATE, 1)
-            && Configuration::updateValue(self::CONFIG_THRESHOLD, 0)
+        return Configuration::updateGlobalValue(self::CONFIG_AUTO_REACTIVATE, 1)
+            && Configuration::updateGlobalValue(self::CONFIG_THRESHOLD, 0)
             && Configuration::updateGlobalValue(self::CONFIG_TOKEN, $token);
+    }
+
+    private function isValidConfigurationRequest()
+    {
+        $token = Tools::getValue('autostock_token');
+
+        return isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST'
+            && $this->context->employee && $this->context->employee->isLoggedBack()
+            && $this->getPermission('configure')
+            && is_string($token)
+            && hash_equals(Tools::getAdminTokenLite('AdminModules'), $token);
     }
 
     private function processSettings()
     {
         $threshold = Tools::getValue(self::CONFIG_THRESHOLD);
 
-        if (!Validate::isInt($threshold) || (int) $threshold < -1000000 || (int) $threshold > 1000000) {
+        if (!is_scalar($threshold) || filter_var($threshold, FILTER_VALIDATE_INT) === false
+            || (int) $threshold < -1000000 || (int) $threshold > 1000000) {
             return $this->displayError(
                 $this->trans(
                     'The stock threshold must be an integer between -1,000,000 and 1,000,000.',
@@ -279,7 +322,7 @@ class SdxAutostock extends Module
                 )
             );
         } catch (Throwable $exception) {
-            PrestaShopLogger::addLog('[SDX AutoStock] ' . $exception->getMessage(), 3);
+            PrestaShopLogger::addLog('[autostock] ' . $exception->getMessage(), 3);
 
             return $this->displayError(
                 $this->trans(
@@ -298,7 +341,7 @@ class SdxAutostock extends Module
     {
         $totals = ['disabled' => 0, 'enabled' => 0];
 
-        foreach ($this->getContextShopIds() as $idShop) {
+        foreach ($this->getRunnableShopIds() as $idShop) {
             $result = $this->runSynchronization($idShop);
             $totals['disabled'] += $result['disabled'];
             $totals['enabled'] += $result['enabled'];
@@ -321,6 +364,23 @@ class SdxAutostock extends Module
         return array_values(array_unique(array_filter($shopIds)));
     }
 
+    /** @return int[] Active context shops where the module is enabled. */
+    private function getRunnableShopIds()
+    {
+        $rows = Db::getInstance()->executeS(
+            'SELECT module_shop.`id_shop`
+            FROM `' . _DB_PREFIX_ . 'module_shop` module_shop
+            INNER JOIN `' . _DB_PREFIX_ . 'shop` shop ON shop.`id_shop` = module_shop.`id_shop`
+            WHERE module_shop.`id_module` = ' . (int) $this->id . ' AND shop.`active` = 1 AND shop.`deleted` = 0'
+        );
+
+        if ($rows === false) {
+            throw new RuntimeException('Unable to load shops enabled for stock synchronization.');
+        }
+
+        return array_values(array_intersect($this->getContextShopIds(), array_map('intval', array_column($rows, 'id_shop'))));
+    }
+
     private function renderConfigurationForm()
     {
         $helper = new HelperForm();
@@ -330,11 +390,17 @@ class SdxAutostock extends Module
         $helper->default_form_language = (int) $this->context->language->id;
         $helper->allow_employee_form_lang = (int) Configuration::get('PS_BO_ALLOW_EMPLOYEE_FORM_LANG');
         $helper->identifier = $this->identifier;
-        $helper->submit_action = 'submitSdxAutostockSettings';
-        $helper->currentIndex = AdminController::$currentIndex . '&configure=' . $this->name;
+        $helper->submit_action = 'submitAutostockSettings';
+        $helper->currentIndex = $this->context->link->getAdminLink(
+            'AdminModules',
+            false,
+            [],
+            ['configure' => $this->name]
+        );
         $helper->token = Tools::getAdminTokenLite('AdminModules');
         $helper->tpl_vars = [
             'fields_value' => [
+                'autostock_token' => Tools::getAdminTokenLite('AdminModules'),
                 self::CONFIG_THRESHOLD => (int) Configuration::get(self::CONFIG_THRESHOLD, null, null, null, 0),
                 self::CONFIG_AUTO_REACTIVATE => (int) Configuration::get(
                     self::CONFIG_AUTO_REACTIVATE,
@@ -353,6 +419,7 @@ class SdxAutostock extends Module
                     'icon' => 'icon-refresh',
                 ],
                 'input' => [
+                    ['type' => 'hidden', 'name' => 'autostock_token'],
                     [
                         'type' => 'text',
                         'label' => $this->trans('Stock threshold', [], self::TRANSLATION_DOMAIN),
@@ -399,23 +466,28 @@ class SdxAutostock extends Module
     private function renderCronPanel()
     {
         $urls = [];
-        $token = (string) Configuration::get(self::CONFIG_TOKEN);
+        $token = (string) Configuration::getGlobalValue(self::CONFIG_TOKEN);
 
-        foreach ($this->getContextShopIds() as $idShop) {
+        foreach ($this->getRunnableShopIds() as $idShop) {
             $shop = new Shop($idShop);
             $url = $this->context->link->getModuleLink(
                 $this->name,
                 'cron',
                 ['token' => $token, 'id_shop' => $idShop],
                 true,
+                (int) Configuration::get('PS_LANG_DEFAULT', null, (int) $shop->id_shop_group, $idShop),
                 $idShop
             );
             $urls[] = '<li><strong>' . Tools::safeOutput($shop->name) . ':</strong> <code>'
                 . Tools::safeOutput($url) . '</code></li>';
         }
 
-        $action = AdminController::$currentIndex . '&configure=' . $this->name
-            . '&token=' . Tools::getAdminTokenLite('AdminModules');
+        $action = $this->context->link->getAdminLink(
+            'AdminModules',
+            true,
+            [],
+            ['configure' => $this->name]
+        );
 
         return '<div class="panel">'
             . '<h3><i class="icon-time"></i> '
@@ -427,10 +499,12 @@ class SdxAutostock extends Module
             )) . '</p>'
             . '<ul>' . implode('', $urls) . '</ul>'
             . '<form method="post" action="' . Tools::safeOutput($action) . '" class="form-inline">'
-            . '<button type="submit" name="submitSdxAutostockRun" class="btn btn-primary">'
+            . '<input type="hidden" name="autostock_token" value="'
+            . Tools::safeOutput(Tools::getAdminTokenLite('AdminModules')) . '">'
+            . '<button type="submit" name="submitAutostockRun" class="btn btn-primary">'
             . '<i class="icon-play"></i> '
             . Tools::safeOutput($this->trans('Run now', [], self::TRANSLATION_DOMAIN)) . '</button> '
-            . '<button type="submit" name="submitSdxAutostockToken" class="btn btn-default">'
+            . '<button type="submit" name="submitAutostockToken" class="btn btn-default">'
             . '<i class="icon-refresh"></i> '
             . Tools::safeOutput($this->trans('Regenerate token', [], self::TRANSLATION_DOMAIN)) . '</button>'
             . '</form></div>';
@@ -438,10 +512,6 @@ class SdxAutostock extends Module
 
     private function generateToken()
     {
-        try {
-            return bin2hex(random_bytes(32));
-        } catch (Exception $exception) {
-            return Tools::passwdGen(64, 'RANDOM');
-        }
+        return bin2hex(random_bytes(32));
     }
 }

@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
-  <file source-language="en-US" target-language="fr-FR" datatype="plaintext" original="sdxautostock.php">
+  <file source-language="en-US" target-language="fr-FR" datatype="plaintext" original="autostock.php">
     <body>
-      <trans-unit id="module_name"><source>SDX AutoStock</source><target>SDX AutoStock</target></trans-unit>
+      <trans-unit id="module_name"><source>autostock</source><target>autostock</target></trans-unit>
       <trans-unit id="module_description"><source>Automatically disables out-of-stock products and optionally reactivates them when stock returns.</source><target>Désactive automatiquement les produits en rupture de stock et peut les réactiver lorsque le stock revient.</target></trans-unit>
-      <trans-unit id="uninstall_confirmation"><source>Uninstall SDX AutoStock and remove its tracking data?</source><target>Désinstaller SDX AutoStock et supprimer ses données de suivi ?</target></trans-unit>
+      <trans-unit id="uninstall_confirmation"><source>Uninstall autostock and remove its tracking data?</source><target>Désinstaller autostock et supprimer ses données de suivi ?</target></trans-unit>
       <trans-unit id="token_regenerated"><source>The cron token has been regenerated.</source><target>Le jeton du cron a été régénéré.</target></trans-unit>
+      <trans-unit id="request_invalid"><source>Invalid request or insufficient permissions.</source><target>Requête invalide ou droits insuffisants.</target></trans-unit>
+      <trans-unit id="token_error"><source>The cron token could not be regenerated.</source><target>Le jeton du cron n’a pas pu être régénéré.</target></trans-unit>
       <trans-unit id="threshold_invalid"><source>The stock threshold must be an integer between -1,000,000 and 1,000,000.</source><target>Le seuil de stock doit être un entier compris entre -1 000 000 et 1 000 000.</target></trans-unit>
       <trans-unit id="settings_error"><source>The settings could not be saved.</source><target>Les réglages n’ont pas pu être enregistrés.</target></trans-unit>
       <trans-unit id="settings_saved"><source>The settings have been saved.</source><target>Les réglages ont été enregistrés.</target></trans-unit>
